@@ -1,0 +1,14 @@
+{
+  "name": "@deepseek-ai/dsh-bg",
+  "description": "Persistent full-window background plugin host half: image storage, /bg-upload /bg-file /bg-rpc routes, config persistence.",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "license": "MIT"
+}
