@@ -290,12 +290,12 @@ export default {
           return
         }
         if (tries < 40) {
-          ctx.setTimeout(attempt, 500)
+          setTimeout(attempt, 500)
         } else {
           console.error('[bg] webServer never became available; routes not registered')
         }
       }
-      ctx.setTimeout(attempt, 500)
+      setTimeout(attempt, 500)
     }
     scheduleRoutes()
 
