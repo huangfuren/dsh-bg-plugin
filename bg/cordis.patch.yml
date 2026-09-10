@@ -1,0 +1,5 @@
+- insert:
+    - id: bg
+      name: '@deepseek-ai/dsh-bg'
+    - id: client-bg
+      name: '@deepseek-ai/dsh-client-bg'
