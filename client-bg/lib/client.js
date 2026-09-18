@@ -309,6 +309,9 @@ window.__ModuleLoader__.load({
 			return React.createElement('div', { className: 'dshbg-page' }, nodes)
 		}
 
+		// 0.1.5：activate 可能被 service-added 事件重复触发，加一次性守卫。
+		let activated = false
+
 		const inject = ['slots', 'theme', 'timer']
 
 		// Graceful degradation: defer activation until all required services
@@ -319,8 +322,10 @@ window.__ModuleLoader__.load({
 			const theme = ctx.get('theme')
 			const timer = ctx.get('timer')
 			if (slots === undefined || theme === undefined) return false
-			if (typeof theme.overrideTokens !== 'function' || typeof theme.getTheme !== 'function') {
-				console.warn('[bg] theme.overrideTokens/getTheme unavailable; background disabled')
+			// 只读用 getTheme 取当前明暗；不再需要 overrideTokens（见「写入权边界」注释），
+			// 所以也不再拿它当激活前提。
+			if (typeof theme.getTheme !== 'function') {
+				console.warn('[bg] theme.getTheme unavailable; background disabled')
 				return false
 			}
 			return activate(ctx, slots, theme, timer)
@@ -337,9 +342,24 @@ window.__ModuleLoader__.load({
 		}
 
 		function activate(ctx, slots, theme, timer) {
+			if (activated) return true
+			activated = true
+			// 0.1.5 打包产物缺失该声明，补上（原先直接引用未定义的 styleEl 导致 styleEl is not defined）。
+			const styleEl = document.createElement('style')
+			styleEl.dataset.plugin = '@deepseek-ai/dsh-client-bg'
 			styleEl.textContent = CSS
 			document.head.appendChild(styleEl)
 			ctx.effect(() => () => { if (styleEl.parentNode) styleEl.parentNode.removeChild(styleEl) })
+
+			// Live 规则：背景 token 的 !important 声明，由本插件独占。
+			// ThemePresenter 与其它皮肤（aqua 等）写 --dsw-alias-bg-base / --dsw-specific-sidebar-fill
+			// 走的是「非 important」路径（inline 或主题覆盖层，按注册顺序后者胜），
+			// 因此开关是否可见取决于谁的层后注册 —— 这就是「点了开关背景不出现」的原因。
+			// important 的 author 声明在层叠中压过所有非 important 声明，背景从此说了算。
+			const liveEl = document.createElement('style')
+			liveEl.dataset.plugin = '@deepseek-ai/dsh-client-bg/live'
+			document.head.appendChild(liveEl)
+			ctx.effect(() => () => { if (liveEl.parentNode) liveEl.parentNode.removeChild(liveEl) })
 
 			const origin = (typeof window !== 'undefined' && window.location && window.location.origin) || ''
 			const rpc = (op, args) => fetch('/bg-rpc', {
@@ -356,111 +376,47 @@ window.__ModuleLoader__.load({
 					.catch(() => null)
 			}
 
-			const SOURCE = 'custom-background'
-			let currentDisposer = null
 			let disposed = false
 
-			// Pristine alias values captured before this plugin's first override:
-			// the off state replaces our layer with these, so the stack shows
-			// exactly what it would without us (theme defaults plus any other
-			// plugin's layer), independent of disposer success.
-			let defaults = null
-			try {
-				const snap = theme.getTheme()
-				const tokens = snap && snap.active && snap.active.tokens ? snap.active.tokens : {}
-				const baseCur = tokens['--dsw-alias-bg-base']
-				const sideCur = tokens['--dsw-specific-sidebar-fill']
-				const schemeNow = snap && snap.active && snap.active.colorScheme ? snap.active.colorScheme : 'light'
-				const read = (def, name) => def && def.tokens && typeof def.tokens[name] === 'string' ? def.tokens[name] : undefined
-				const list = snap && Array.isArray(snap.themes) ? snap.themes : []
-				const light = list.find((t) => t.id === 'light')
-				const dark = list.find((t) => t.id === 'dark')
-				const baseLight = read(light, '--dsw-alias-bg-base') || (schemeNow === 'light' && typeof baseCur === 'string' ? baseCur : '#f8fafc')
-				const baseDark = read(dark, '--dsw-alias-bg-base') || (schemeNow === 'dark' && typeof baseCur === 'string' ? baseCur : '#14161a')
-				const sideLight = read(light, '--dsw-specific-sidebar-fill') || (typeof sideCur === 'string' ? sideCur : baseLight)
-				const sideDark = read(dark, '--dsw-specific-sidebar-fill') || (typeof sideCur === 'string' ? sideCur : baseDark)
-				defaults = {
-					base: { light: baseLight, dark: baseDark },
-					sidebar: { light: sideLight, dark: sideDark },
-				}
-			} catch (e) { defaults = null }
-
-			// Mirror the window background directly onto <body> in addition to
-			// the theme override layer. The override layer's publish() invokes
-			// every theme/change listener synchronously; if any listener throws
-			// (e.g. another plugin), the theme presenter may never receive the
-			// snapshot and the DOM keeps the old background. Writing the two
-			// variables ourselves guarantees the visual flips immediately, and
-			// the presenter's next healthy apply reconciles to the same values.
-			const mirrorOn = (st) => {
-				try {
-					const body = document.body
-					body.style.setProperty('--dsw-alias-bg-base', composeBg(st, scheme()))
-					body.style.setProperty('--dsw-specific-sidebar-fill', 'transparent')
-				} catch (e) { /* best-effort */ }
-			}
-			const mirrorOff = () => {
-				try {
-					const body = document.body
-					body.style.removeProperty('--dsw-alias-bg-base')
-					body.style.removeProperty('--dsw-specific-sidebar-fill')
-				} catch (e) { /* best-effort */ }
-			}
-			// Reflect the on/off state on <body> so the stylesheet can suppress
-			// foreign backdrop layers (e.g. the aqua skin's ambient) while the
-			// background is off.
+			// ── 写入权边界（本次冲突的根治）────────────────────────────────
+			// --dsw-alias-bg-base / --dsw-specific-sidebar-fill 是**共享 token**：
+			//   · ThemePresenter 拥有 body 的 inline 写入（非 important）；
+			//   · 皮肤（aqua 等）拥有自己的 theme 覆盖层，按注册顺序后者胜。
+			// 本插件过去也在 body.style 上 set/removeProperty —— 与呈现器抢同一个
+			// 声明槽：setProperty 会在呈现器之后覆盖它，removeProperty 更狠，会把
+			// 呈现器刚写进去的值直接删掉（关闭背景后皮肤颜色丢失，就是旧版加「中性
+			// 覆盖层」打补丁的由来）。
+			// 现在插件**完全不碰 body.style、也不注册自己的覆盖层**，只用一条自有的
+			// !important 样式规则参与层叠：important 的 author 声明压过一切非 important
+			// 声明，因此开关始终说了算，而其它写入者各自的层互不干扰。
 			const syncAttribute = (st) => {
 				try {
 					document.body.setAttribute('data-dsh-bg', st.enabled && st.current ? 'on' : 'off')
 				} catch (e) { /* best-effort */ }
 			}
-
+			// 唯一的写入点：开=写入背景规则；关=清空规则（回到皮肤/主题自己的颜色）。
+			const paintLive = (st) => {
+				try {
+					if (!st.enabled || !st.current) { liveEl.textContent = ''; return }
+					liveEl.textContent = 'body[data-dsh-bg="on"]{'
+						+ '--dsw-alias-bg-base:' + composeBg(st, scheme()) + ' !important;'
+						+ '--dsw-specific-sidebar-fill:transparent !important;'
+						+ '}'
+				} catch (e) { /* best-effort */ }
+			}
 			const applyNow = (st) => {
 				if (disposed) return
 				try {
-					if (!st.enabled || !st.current) {
-						restore()
-					} else {
-						const tokens = {
-							'--dsw-alias-bg-base': { light: composeBg(st, 'light'), dark: composeBg(st, 'dark') },
-							'--dsw-specific-sidebar-fill': { light: 'transparent', dark: 'transparent' },
-						}
-						try {
-							currentDisposer = theme.overrideTokens(SOURCE, tokens)
-						} catch (err) {
-							console.error('[bg] theme override failed:', err && err.message ? err.message : err)
-						}
-						mirrorOn(st)
-					}
-					syncAttribute(st)
+					syncAttribute(st) // live 规则以该属性为选择器
+					paintLive(st)
 				} catch (err) {
 					console.error('[bg] apply failed:', err && err.message ? err.message : err)
 				}
 			}
+			/** 关闭：清空自有规则并落 off 属性；不触碰任何共享 token 的写入。 */
 			const restore = () => {
-				if (disposed) return
-				if (currentDisposer) {
-					try {
-						currentDisposer()
-					} catch (err) {
-						console.error('[bg] restore failed:', err && err.message ? err.message : err)
-					}
-					currentDisposer = null
-				}
-				// Replace our layer with neutral (default) values so a stale
-				// superseded layer can never re-surface the background through a
-				// later healthy theme publish.
-				try {
-					if (defaults !== null) {
-						currentDisposer = theme.overrideTokens(SOURCE, {
-							'--dsw-alias-bg-base': defaults.base,
-							'--dsw-specific-sidebar-fill': defaults.sidebar,
-						})
-					}
-				} catch (err) {
-					console.error('[bg] neutral override failed:', err && err.message ? err.message : err)
-				}
-				mirrorOff()
+				try { liveEl.textContent = '' } catch (e) { /* best-effort */ }
+				try { document.body.setAttribute('data-dsh-bg', 'off') } catch (e) { /* best-effort */ }
 			}
 			ctx.effect(() => () => { disposed = true; restore() })
 
@@ -519,10 +475,15 @@ window.__ModuleLoader__.load({
 
 			const state = { ...DEFAULT_STATE, origin }
 			syncAttribute(state)
+			// 跟随明暗切换：只重画 !important 规则，不调用 overrideTokens（否则自触发 publish 成环）。
+			if (typeof ctx.on === 'function') {
+				ctx.on('theme/change', () => { if (!disposed) paintLive(state) })
+			}
 			slots.inject('settings.section', () => slots.register(
 				{ name: 'settings.section', id: 'background', order: 12, label: () => '背景设置' },
 				(props) => React.createElement(BackgroundPage, { state, applyNow, restore, scheduleSave, saveNow: save, load, deleteImage, upload, scheme }),
 			))
+			return true
 		}
 
 		exports.apply = apply;
