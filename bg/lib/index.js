@@ -89,8 +89,7 @@ function stableRoot() {
   return user !== '' ? user + '/.dsh/background' : null
 }
 
-export default {
-  apply(ctx) {
+function applyInner(ctx) {
     const disposers = []
     let disposed = false
 
@@ -376,5 +375,17 @@ export default {
       disposed = true
       for (const d of disposers) d()
     })
+}
+
+export default {
+  apply(ctx) {
+    // 兼容性加固：apply 抛出会让 DSH 的启动审计（assertEntriesActivated）把本插件
+    // 判为 fiber FAILED 并拒绝启动整个 dsh。这里整体兜底：宿主 API 若发生未预料的
+    // 变化，只降级本插件（背景功能不可用）并记录日志，绝不连带 dsh 起不来。
+    try {
+      applyInner(ctx)
+    } catch (err) {
+      console.error('[bg] init failed; background feature disabled: ' + (err && err.message ? err.message : err))
+    }
   },
 }

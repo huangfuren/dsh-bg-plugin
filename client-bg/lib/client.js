@@ -312,23 +312,38 @@ window.__ModuleLoader__.load({
 		// 0.1.5：activate 可能被 service-added 事件重复触发，加一次性守卫。
 		let activated = false
 
-		const inject = ['slots', 'theme', 'timer']
+		// 兼容性加固：只声明真正必需的服务。timer 仅是 debounce 的可选优化
+		// （activate 内已有回退），放进 inject 反而会让「宿主不提供 timer」变成
+		// 本插件永远 pending、彻底不激活。故移除，改为运行时探测。
+		const inject = ['slots', 'theme']
 
 		// Graceful degradation: defer activation until all required services
 		// become available. Re-runs on cordis service-added events so plugins
 		// remain functional across DSH boot-order changes.
 		function tryApply(ctx) {
-			const slots = ctx.get('slots')
-			const theme = ctx.get('theme')
-			const timer = ctx.get('timer')
-			if (slots === undefined || theme === undefined) return false
-			// 只读用 getTheme 取当前明暗；不再需要 overrideTokens（见「写入权边界」注释），
-			// 所以也不再拿它当激活前提。
-			if (typeof theme.getTheme !== 'function') {
-				console.warn('[bg] theme.getTheme unavailable; background disabled')
+			// 兼容性加固：探测每一步的 API 形状并整体兜底，宿主变化只禁用背景功能。
+			try {
+				const slots = ctx.get('slots')
+				const theme = ctx.get('theme')
+				const timer = ctx.get('timer')
+				if (slots === undefined || theme === undefined) return false
+				if (typeof slots.inject !== 'function' || typeof slots.register !== 'function') {
+					console.warn('[bg] slots API changed; background disabled')
+					return false
+				}
+				// 只读用 getTheme 取当前明暗；不再需要 overrideTokens（见「写入权边界」注释），
+				// 所以也不再拿它当激活前提。
+				if (typeof theme.getTheme !== 'function') {
+					console.warn('[bg] theme.getTheme unavailable; background disabled')
+					return false
+				}
+				return activate(ctx, slots, theme, timer)
+			} catch (err) {
+				console.warn('[bg] init failed; background disabled: ' + (err && err.message ? err.message : err))
+				// 允许后续 service-added 事件重试（activate 的一次性守卫需回滚）。
+				activated = false
 				return false
 			}
-			return activate(ctx, slots, theme, timer)
 		}
 
 		function apply(ctx) {
@@ -479,10 +494,14 @@ window.__ModuleLoader__.load({
 			if (typeof ctx.on === 'function') {
 				ctx.on('theme/change', () => { if (!disposed) paintLive(state) })
 			}
-			slots.inject('settings.section', () => slots.register(
-				{ name: 'settings.section', id: 'background', order: 12, label: () => '背景设置' },
-				(props) => React.createElement(BackgroundPage, { state, applyNow, restore, scheduleSave, saveNow: save, load, deleteImage, upload, scheme }),
-			))
+			try {
+				slots.inject('settings.section', () => slots.register(
+					{ name: 'settings.section', id: 'background', order: 12, label: () => '背景设置' },
+					(props) => React.createElement(BackgroundPage, { state, applyNow, restore, scheduleSave, saveNow: save, load, deleteImage, upload, scheme }),
+				))
+			} catch (err) {
+				console.warn('[bg] settings section registration failed: ' + (err && err.message ? err.message : err))
+			}
 			return true
 		}
 
