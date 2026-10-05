@@ -1,0 +1,8 @@
+# 背景插件的客户端半（设置面板 + 背景绘制层）。与 host 半 @deepseek-ai/dsh-bg 分成两个包，
+# 各自声明 dsh.bundle，因此两者都能被插件安装器单独安装：
+# - 桌面版「添加插件」/ `dsh plugin add` 拒绝没有 dsh.bundle 的包（not-a-bundle）；
+# - 反过来，host 半的 patch 里 insert 本包，会导致「装完 bg 才发现缺 client 半」——
+#   本包不在 host 半的任何 dependencies 里，pnpm 不会替它装上。
+- insert:
+    - id: client-bg
+      name: '@deepseek-ai/dsh-client-bg'

@@ -1,5 +1,7 @@
+# 背景插件 host 半：只把自己插入加载树。
+# 客户端半 @deepseek-ai/dsh-client-bg 自带 cordis.patch.yml 自行插入（它不在本包的
+# dependencies 里，装本包不会顺带装上它；由本 patch 顺带 insert 会让「装完 bg 才发现
+# 缺 client 半」这类半装状态更难排查）。
 - insert:
     - id: bg
       name: '@deepseek-ai/dsh-bg'
-    - id: client-bg
-      name: '@deepseek-ai/dsh-client-bg'
