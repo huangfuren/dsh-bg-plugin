@@ -1,0 +1,49 @@
+# CI 工作流：每次向 main 分支推送或发起针对 main 的 PR 时，
+# 在多个 Node.js 版本 × 操作系统上校验两个包的产物与加载声明。
+name: CI
+
+# 触发条件：
+# - push 到 main 分支
+# - 针对 main 分支的 pull_request
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# 最小权限原则：仅授予读取仓库内容的权限，避免工作流获得写权限令牌。
+permissions:
+  contents: read
+
+jobs:
+  # 校验任务：本仓库是两个包（bg 宿主半 + client-bg 客户端半），没有根 package.json，
+  # 因此不使用 npm 脚本，直接对产物与声明做零依赖检查。
+  verify:
+    name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # 即使某个组合失败也不中断其它组合，便于一次看全矩阵结果。
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      # 拉取源码。
+      - uses: actions/checkout@v4
+      # 安装指定版本的 Node。
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # 1) 产物语法：宿主半（Node ESM）与客户端半（浏览器 bundle）都必须能解析。
+      - name: Syntax check
+        run: |
+          node --check bg/lib/index.js
+          node --check client-bg/lib/index.js
+          node --check client-bg/lib/client.js
+
+      # 2) 包声明与加载声明：JSON 必须可解析，且两个包都要声明 dsh.bundle.patch
+      #    —— 少了它，插件安装器（桌面版「添加插件」/ dsh plugin add）会以
+      #    not-a-bundle 直接拒绝安装，而这个问题只有装的时候才会暴露。
+      - name: Check package manifests
+        run: node scripts/check-manifests.mjs
