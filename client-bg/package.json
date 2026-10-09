@@ -3,7 +3,8 @@
   "description": "Persistent full-window background plugin client half: settings UI, theme-token renderer, fetch-based upload.",
   "version": "1.0.1",
   "engines": {
-    "dsh": ">=0.1.5-rc.2 <1.0.0"
+    "node": ">=22.19",
+    "dsh": ">=0.1.5-rc.2 <1.0.0 || >=0.2.0-rc.1 <1.0.0"
   },
   "type": "module",
   "main": "lib/index.js",

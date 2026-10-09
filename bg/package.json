@@ -3,7 +3,8 @@
   "description": "Persistent full-window background plugin host half: image storage, /bg-upload /bg-file /bg-rpc routes, config persistence.",
   "version": "1.0.1",
   "engines": {
-    "dsh": ">=0.1.5-rc.2 <1.0.0"
+    "node": ">=22.19",
+    "dsh": ">=0.1.5-rc.2 <1.0.0 || >=0.2.0-rc.1 <1.0.0"
   },
   "type": "module",
   "main": "lib/index.js",
