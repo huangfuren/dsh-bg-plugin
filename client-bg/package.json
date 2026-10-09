@@ -2,6 +2,9 @@
   "name": "@deepseek-ai/dsh-client-bg",
   "description": "Persistent full-window background plugin client half: settings UI, theme-token renderer, fetch-based upload.",
   "version": "1.0.1",
+  "engines": {
+    "dsh": ">=0.1.5-rc.2 <1.0.0"
+  },
   "type": "module",
   "main": "lib/index.js",
   "exports": {
