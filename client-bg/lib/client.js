@@ -7,20 +7,9 @@ window.__ModuleLoader__.load({
 
 		const React = require("react");
 
-		const B64C = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-		function stringToBase64(s) {
-			let out = ''
-			for (let i = 0; i < s.length; i += 3) {
-				const b0 = s.charCodeAt(i)
-				const b1 = i + 1 < s.length ? s.charCodeAt(i + 1) : 0
-				const b2 = i + 2 < s.length ? s.charCodeAt(i + 2) : 0
-				out += B64C[b0 >> 2]
-				out += B64C[((b0 & 3) << 4) | (b1 >> 4)]
-				out += i + 1 < s.length ? B64C[((b1 & 15) << 2) | (b2 >> 6)] : '='
-				out += i + 2 < s.length ? B64C[b2 & 63] : '='
-			}
-			return out
-		}
+		// 单张图片上限，与宿主侧 routes.js 的 DEFAULT_MAX_UPLOAD 保持一致。
+		// 客户端先本地校验一次，超限直接提示，不必把 20MB 传上去再被 413 退回。
+		const MAX_UPLOAD = 16 * 1024 * 1024
 		const POS_X = ['left', 'center', 'right']
 		const POS_Y = ['top', 'center', 'bottom']
 		const FIT_OPTS = [['cover', '覆盖 Cover'], ['contain', '包含 Contain'], ['stretch', '拉伸 Stretch']]
@@ -37,6 +26,18 @@ window.__ModuleLoader__.load({
 			posY: 'center',
 			fit: 'cover',
 		}
+		/**
+		 * 把模糊后的图片包成 SVG 滤镜图层，返回一个 data URI。
+		 *
+		 * 用百分号编码而不是 base64：这段 SVG 只有几百字节，`encodeURIComponent`
+		 * 是原生实现且不需要额外的 base64 转换；这里旧版有一份手写 base64，
+		 * 纯 JS 逐字节循环，大字符串下比原生慢两个数量级，且完全没必要。
+		 * `'` 手动编码掉，避免和 CSS 里 `url('...')` 的单引号打架。
+		 */
+		function svgDataUri(svg) {
+			return 'data:image/svg+xml;charset=utf-8,'
+				+ encodeURIComponent(svg).replace(/'/g, '%27')
+		}
 		function blurredImageUrl(url, w, h, blur, origin) {
 			const width = (w && w > 0) ? w : 1920
 			const height = (h && h > 0) ? h : 1080
@@ -46,7 +47,7 @@ window.__ModuleLoader__.load({
 			const svg = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="' + width + '" height="' + height + '" viewBox="0 0 ' + width + ' ' + height + '">'
 				+ '<defs><filter id="b" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="' + stdDev + '"/></filter></defs>'
 				+ '<image href="' + href + '" xlink:href="' + href + '" x="0" y="0" width="' + width + '" height="' + height + '" preserveAspectRatio="xMidYMid slice" filter="url(#b)"/></svg>'
-			return 'data:image/svg+xml;base64,' + stringToBase64(svg)
+			return svgDataUri(svg)
 		}
 		function composeBg(st, scheme, show) {
 			if (show === false) return scheme === 'dark' ? '#14161a' : '#f8fafc'
@@ -136,20 +137,27 @@ window.__ModuleLoader__.load({
 		function BackgroundPage(props) {
 			const st = props.state
 			const [, force] = React.useState(0)
-			const set = (patch) => { Object.assign(st, patch); force((n) => n + 1) }
-			const commit = (patch) => {
-				touched.current = true
-				Object.assign(st, patch)
-				force((n) => n + 1)
-				props.applyNow(st)
-				props.scheduleSave(st, (ok) => setSaveStatus(ok ? 'saved' : 'error'))
-			}
 			const [saveStatus, setSaveStatus] = React.useState('saved')
 			const [uploadStatus, setUploadStatus] = React.useState('idle')
 			// True once the user has changed anything in this mount; the async
 			// config hydration below must not clobber their in-session choice
 			// (e.g. toggling the background off before the load round-trips).
 			const touched = React.useRef(false)
+			// 有没有「已经改了、但还没落到磁盘」的改动。卸载时据此补一次立即保存：
+			// 600ms 的 debounce 会随组件一起被丢掉，拖完滑杆马上切走就等于白改。
+			const dirty = React.useRef(false)
+
+			const commit = (patch) => {
+				touched.current = true
+				dirty.current = true
+				Object.assign(st, patch)
+				force((n) => n + 1)
+				props.applyNow(st)
+				props.scheduleSave(st, (ok) => {
+					if (ok) dirty.current = false
+					setSaveStatus(ok ? 'saved' : 'error')
+				})
+			}
 
 			React.useEffect(() => {
 				let alive = true
@@ -176,20 +184,43 @@ window.__ModuleLoader__.load({
 				return () => { alive = false }
 			}, [])
 
+			// 卸载兜底：把还没落盘的最后一次改动补写掉。
+			React.useEffect(() => () => {
+				if (!dirty.current) return
+				dirty.current = false
+				const snapshot = { ...st, images: st.images.slice() }
+				try { Promise.resolve(props.saveNow(snapshot)).catch(() => {}) } catch (e) { /* best-effort */ }
+			}, [])
+
 			const onFile = (e) => {
-				const f = e.target.files && e.target.files[0]
+				const input = e.target
+				const f = input.files && input.files[0]
+				// 清空选择，否则「删掉图 → 再选同一张」不会触发 change。
+				try { input.value = '' } catch (err) { /* 只读输入框，忽略 */ }
 				if (!f) return
+				// 本地先判一次体积：超限就没必要把几十 MB 传上去再被 413 退回。
+				if (typeof f.size === 'number' && f.size > MAX_UPLOAD) { setUploadStatus('too-large'); return }
 				setUploadStatus('uploading')
 				props.upload(f).then((res) => {
-					if (res && res.id) {
+					if (res && res.ok && res.data && res.data.id) {
+						const data = res.data
 						setUploadStatus('done')
-						const images = st.images.filter((x) => x.id !== res.id).concat({ id: res.id, name: res.name, width: res.width || null, height: res.height || null, mime: res.mime })
-						commit({ images, current: res.id, enabled: true })
-					} else setUploadStatus('error')
+						const images = st.images.filter((x) => x.id !== data.id).concat({ id: data.id, name: data.name, width: data.width || null, height: data.height || null, mime: data.mime })
+						commit({ images, current: data.id, enabled: true })
+						return
+					}
+					const err = res && res.error
+					setUploadStatus(err === 'too-large' ? 'too-large' : err === 'unsupported' ? 'unsupported' : 'error')
 				}).catch(() => setUploadStatus('error'))
 			}
-			const removeImage = (id) => {
-				props.deleteImage(id)
+			const removeImage = async (id) => {
+				// 必须等宿主真的把文件删掉再改界面：旧实现发完请求就更新列表，
+				// 删失败时界面说「已删除」、磁盘上还留着，且用户无从重试。
+				const res = await props.deleteImage(id).catch(() => null)
+				if (!res || !res.ok) {
+					setSaveStatus('delete-failed')
+					return
+				}
 				const images = st.images.filter((x) => x.id !== id)
 				commit({ images, current: st.current === id ? null : st.current })
 			}
@@ -229,13 +260,16 @@ window.__ModuleLoader__.load({
 
 			nodes.push(React.createElement('div', { className: 'dshbg-label', key: 'l2' }, '上传背景图片'))
 			{
-				const hint = uploadStatus === 'idle' ? '支持 JPG / PNG / WebP，选择后自动上传应用'
+				const hint = uploadStatus === 'idle' ? '支持 JPG / PNG / WebP / GIF，单张上限 16MB，选择后自动上传应用'
 					: uploadStatus === 'uploading' ? '上传中…'
 					: uploadStatus === 'done' ? '已上传并应用，关闭设置查看完整效果'
+					: uploadStatus === 'too-large' ? '图片超过 16MB，请压缩后再上传'
+					: uploadStatus === 'unsupported' ? '不支持的图片格式（仅接受 JPG / PNG / WebP / GIF）'
 					: '上传失败，请重试'
+				const isError = uploadStatus === 'error' || uploadStatus === 'too-large' || uploadStatus === 'unsupported'
 				nodes.push(React.createElement('div', { className: 'dshbg-upload', key: 'up' },
 					React.createElement('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp,image/gif', onChange: onFile }),
-					React.createElement('div', { className: 'dshbg-upload-status' + (uploadStatus === 'error' ? ' error' : uploadStatus === 'done' ? ' ok' : ''), key: 'us' }, hint)))
+					React.createElement('div', { className: 'dshbg-upload-status' + (isError ? ' error' : uploadStatus === 'done' ? ' ok' : ''), key: 'us' }, hint)))
 			}
 
 			nodes.push(React.createElement('div', { className: 'dshbg-label', key: 'l3' }, '我的背景'))
@@ -297,14 +331,25 @@ window.__ModuleLoader__.load({
 
 			nodes.push(React.createElement('div', { className: 'dshbg-actions', key: 'act' },
 				React.createElement('button', { type: 'button', className: 'dshbg-btn', onClick: () => {
-					props.restore()
-					const fresh = { ...DEFAULT_STATE }
-					Object.keys(fresh).forEach((k) => { st[k] = fresh[k] })
-					force((n) => n + 1)
-					props.scheduleSave(null, (ok) => setSaveStatus(ok ? 'saved' : 'error'))
+					// 先让宿主把图片文件与配置一起删掉，再重置本地状态。
+					// 旧实现只调 scheduleSave(null)：配置没了，图片文件全留在磁盘上，
+					// 越用越占空间，而且没有任何入口能再清掉它们。
+					setSaveStatus('saving')
+					dirty.current = false
+					props.clear().then((res) => {
+						props.restore()
+						const fresh = { ...DEFAULT_STATE }
+						Object.keys(fresh).forEach((k) => { st[k] = fresh[k] })
+						touched.current = true
+						force((n) => n + 1)
+						setSaveStatus(res && res.ok ? 'saved' : 'error')
+					}).catch(() => setSaveStatus('error'))
 				} }, '关闭背景并清空设置'),
 				React.createElement('span', { className: 'dshbg-status' },
-					saveStatus === 'saved' ? '已自动保存' : saveStatus === 'error' ? '保存失败（仅本次生效）' : '')))
+					saveStatus === 'saved' ? '已自动保存'
+					: saveStatus === 'saving' ? '正在清空…'
+					: saveStatus === 'delete-failed' ? '删除失败：文件仍保留，请重试'
+					: '保存失败（仅本次生效）')))
 
 			return React.createElement('div', { className: 'dshbg-page' }, nodes)
 		}
@@ -387,8 +432,8 @@ window.__ModuleLoader__.load({
 				fd.append('file', file)
 				return fetch('/bg-upload', { method: 'POST', body: fd })
 					.then((r) => r.json())
-					.then((res) => (res && res.ok ? res.data : null))
-					.catch(() => null)
+					.then((res) => (res && typeof res === 'object' ? res : { ok: false, error: 'bad-response' }))
+					.catch(() => ({ ok: false, error: 'network' }))
 			}
 
 			let disposed = false
@@ -461,6 +506,10 @@ window.__ModuleLoader__.load({
 				return res && res.ok ? res.data : null
 			}
 			const deleteImage = (id) => rpc('delete', { id })
+				.then((res) => (res && typeof res === 'object' ? res : { ok: false, error: 'network' }))
+			/** 清空图库：宿主会删掉全部图片文件与配置，不只是把配置置空。 */
+			const clear = () => rpc('clear')
+				.then((res) => (res && typeof res === 'object' ? res : { ok: false, error: 'network' }))
 			const scheme = () => {
 				try {
 					const snap = theme.getTheme()
@@ -497,7 +546,7 @@ window.__ModuleLoader__.load({
 			try {
 				slots.inject('settings.section', () => slots.register(
 					{ name: 'settings.section', id: 'background', order: 12, label: () => '背景设置' },
-					(props) => React.createElement(BackgroundPage, { state, applyNow, restore, scheduleSave, saveNow: save, load, deleteImage, upload, scheme }),
+					(props) => React.createElement(BackgroundPage, { state, applyNow, restore, scheduleSave, saveNow: save, load, deleteImage, clear, upload, scheme }),
 				))
 			} catch (err) {
 				console.warn('[bg] settings section registration failed: ' + (err && err.message ? err.message : err))

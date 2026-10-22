@@ -1,0 +1,13 @@
+{
+  "name": "dsh-bg-plugin-repo",
+  "private": true,
+  "version": "0.0.0",
+  "description": "仓库工作区（不发布）：包含 bg 宿主半与 client-bg 客户端半两个独立包，以及校验脚本与测试。",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "check": "node --check bg/lib/index.js && node --check bg/lib/storage.js && node --check bg/lib/routes.js && node --check bg/lib/multipart.js && node --check bg/lib/image-format.js && node --check client-bg/lib/index.js && node --check client-bg/lib/client.js && node scripts/check-manifests.mjs",
+    "test": "node --test test/image-format.test.js test/multipart.test.js test/storage.test.js test/routes.test.js test/plugin-apply.test.js",
+    "verify": "npm run check && npm test"
+  }
+}

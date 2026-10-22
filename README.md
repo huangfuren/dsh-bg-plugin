@@ -10,14 +10,32 @@ DeepSeek Harness (DSH) 自定义背景插件 —— 为 `dsh web` 界面提供�
 |---|---|
 | `bg/` | 宿主端（Node half）：图片存储、`/bg-upload` `/bg-file` `/bg-rpc` 路由、配置持久化 |
 | `client-bg/` | 客户端（Web half）：设置面板 UI、主题 Token 渲染、fetch 上传 |
+| `test/` | 宿主侧的回归测试（`node --test`，零依赖） |
+
+宿主端内部按职责拆成四个模块，`bg/lib/index.js` 只做装配：
+
+| 文件 | 职责 |
+|---|---|
+| `bg/lib/image-format.js` | 按字节签名识别 PNG / JPEG / GIF / WebP，并嗅探像素宽高 |
+| `bg/lib/multipart.js` | `multipart/form-data` 解析 |
+| `bg/lib/storage.js` | 配置与图片落盘、旧格式懒迁移、孤儿回收 |
+| `bg/lib/routes.js` | 三个 HTTP 路由，含流式限额与缓存头 |
 
 ## 功能
 
 - 全窗口背景图，覆盖聊天界面
-- 上传 PNG / JPEG / GIF / WebP（≤16MB），服务端嗅探尺寸与 MIME
+- 上传 PNG / JPEG / GIF / WebP（≤16MB），服务端按**字节签名**判定格式并嗅探尺寸
 - 实时预览 + 设置：透明度、亮度、黑色遮罩、高斯模糊（SVG 滤镜）、位置（9 宫格）、填充方式（cover / contain / stretch）
-- 配置经 Host `fs` 落盘持久化，重启不丢失
+- 配置与图片落盘持久化（默认 `$DSH_HOME/background`），重启不丢失
 - 关闭开关即回到原生界面，不改 DSH 任何源码
+
+## 存储
+
+图片以**原始字节**存盘（`.dsh-bg-<id>.png|jpg|gif|webp`），配置在同目录的 `.dsh-bg-config.json`。
+
+- 1.0.1 及更早把图片包成 `{mime, data: base64}` 的 JSON，体积大 33%，读取时还要全量解码。旧文件会在**第一次被访问时**自动迁移成原图并删掉，不需要手动处理。
+- `/bg-file/<id>` 响应带 `Cache-Control: ... immutable`：id 一次生成终身不变，刷新页面不再重下图库。
+- 「关闭背景并清空设置」会真正删掉图片文件与配置；启动时另有一次孤儿回收，清掉没有配置引用的残留文件（只清落盘超过 1 小时的，避免误删正在上传的图）。
 
 ## 安装
 
@@ -57,9 +75,10 @@ dsh plugin --profile desktop add link:/absolute/path/to/dsh-bg-plugin/client-bg
 
 ## 开发
 
-- 宿主端：`bg/lib/index.js`，纯 Node，无构建步骤
+- 宿主端：`bg/lib/`，纯 Node ESM，无构建步骤
 - 客户端：`client-bg/lib/client.js`，浏览器侧 React 代码
-- 依赖：`react`（peerDependency），宿主服务 `webServer`、`fs`、`sandboxPolicy`
+- 依赖：`react`（peerDependency），宿主服务 `webServer`、`sandboxPolicy`
+- 校验：`npm run verify`（语法 + 包声明 + 测试）；测试可单跑 `npm test`
 
 ## License
 

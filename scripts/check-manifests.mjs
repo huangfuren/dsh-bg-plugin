@@ -52,6 +52,12 @@ for (const { dir, name } of PACKAGES) {
   check(`${dir} declares dsh.bundle.patch`, typeof patchRef === 'string', `got ${String(patchRef)}`)
   if (typeof patchRef !== 'string') continue
 
+  // 包入口必须真实存在：重构时把 lib/index.js 拆成多模块，最容易犯的错就是
+  // 声明还指着老路径，而这类错误直到插件被加载时才暴露。
+  const mainRef = manifest.main
+  check(`${dir} main entry exists`, typeof mainRef === 'string' && existsSync(join(dir, mainRef)), `got ${String(mainRef)}`)
+  check(`${dir} ships lib/`, Array.isArray(manifest.files) && manifest.files.includes('lib'))
+
   const patchPath = join(dir, patchRef)
   if (!existsSync(patchPath)) {
     check(`${dir} patch file exists`, false, patchPath)
@@ -68,6 +74,18 @@ if (existsSync(clientManifestPath)) {
   const platform = client.dsh?.client?.platform
   check('client-bg dsh.client.platform is "web"', platform === 'web', `got ${String(platform)}`)
   check('client-bg exports ./client', typeof client.exports?.['./client'] !== 'undefined')
+}
+
+// 根工作区：只为跑脚本与测试而存在，必须 private —— 否则一次手滑的 npm publish
+// 会把仓库名占在 npm 上，还得再去申请撤销。
+if (existsSync('package.json')) {
+  try {
+    const root = JSON.parse(readFileSync('package.json', 'utf8'))
+    check('root package.json is private', root.private === true)
+    check('root package.json has test script', typeof root.scripts?.test === 'string')
+  } catch (error) {
+    check('root package.json parses', false, error.message)
+  }
 }
 
 if (failures.length > 0) {
