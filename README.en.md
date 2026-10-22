@@ -2,7 +2,7 @@
 
 English | [中文](README.md)
 
-A persistent full-window background plugin for the DeepSeek Harness (DSH) web UI. Upload an image, preview it live, and tune opacity / brightness / mask / blur / position / fit. Settings persist across restarts.
+A persistent full-window background plugin for the DeepSeek Harness (DSH) web UI. Upload an image, preview it live, and tune the panel plate / opacity / brightness / mask / blur / position / fit. Settings persist across restarts.
 
 ## Structure
 
@@ -27,7 +27,8 @@ The host half is split by responsibility; `lib/index.js` only wires things toget
 
 - A full-window background image covering the chat surface
 - Upload PNG / JPEG / GIF / WebP (≤16 MB); the server validates format by **byte signature** and sniffs dimensions
-- Live preview plus settings: opacity, brightness, black mask, Gaussian blur (SVG filter), position (3×3 grid), fit (cover / contain / stretch)
+- Live preview plus settings: **panel plate**, opacity, brightness, black mask, Gaussian blur (SVG filter), position (3×3 grid), fit (cover / contain / stretch)
+- Defaults favour readability — the wallpaper becomes a texture under a themed plate (blur 6 / mask 12 / plate 70), so contrast no longer drifts with the image; one click restores the recommended look, and dragging the plate to 0 brings back a full-bleed wallpaper
 - Config and images persist to disk (default `$DSH_HOME/background`), so they survive restarts
 - Flip the switch off and the stock UI returns; no changes to DSH source
 

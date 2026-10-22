@@ -229,6 +229,7 @@ test('配置归一化：越界参数被夹紧，非法 id 被丢弃', () => {
     brightness: -20,
     mask: 50.6,
     blur: '7',
+    overlay: 140,
     posX: 'middle',
     posY: 'bottom',
     fit: 'squish',
@@ -243,9 +244,21 @@ test('配置归一化：越界参数被夹紧，非法 id 被丢弃', () => {
   assert.equal(cfg.brightness, 0)
   assert.equal(cfg.mask, 51)
   assert.equal(cfg.blur, 7)
+  assert.equal(cfg.overlay, 100)
   assert.equal(cfg.posX, 'center')
   assert.equal(cfg.posY, 'bottom')
   assert.equal(cfg.fit, 'cover')
+})
+
+test('旧配置没有 overlay 键时落到推荐值 70（升级即变清楚）', () => {
+  // 1.2.x 写盘的配置里没有 overlay；归一化必须补上推荐值，
+  // 否则客户端拿到 undefined 会把铺底当成 0，等于升级后观感毫无变化。
+  const cfg = sanitizeConfig({ version: 3, enabled: true, current: 'bgok00001', images: [{ id: 'bgok00001' }], mask: 15, brightness: 75, blur: 0 })
+  assert.equal(cfg.overlay, 70)
+  // 其余显式给了值的参数照旧保留，不强行改写成推荐值。
+  assert.equal(cfg.mask, 15)
+  assert.equal(cfg.brightness, 75)
+  assert.equal(cfg.blur, 0)
 })
 
 test('current 不在 images 里时自动关闭背景', () => {

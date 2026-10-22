@@ -1,7 +1,7 @@
 {
   "name": "dsh-bg-plugin",
-  "version": "1.2.0",
-  "description": "Persistent full-window background for DeepSeek Harness: upload images and tune opacity, brightness, mask, blur, position and fit. Images live on the host filesystem, so they survive browser data clearing and reinstalls.",
+  "version": "1.3.0",
+  "description": "Persistent full-window background for DeepSeek Harness: upload images and tune panel plate, opacity, brightness, mask, blur, position and fit. Images live on the host filesystem, so they survive browser data clearing and reinstalls.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

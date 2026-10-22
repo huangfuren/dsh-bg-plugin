@@ -13,18 +13,30 @@ window.__ModuleLoader__.load({
 		const POS_X = ['left', 'center', 'right']
 		const POS_Y = ['top', 'center', 'bottom']
 		const FIT_OPTS = [['cover', '覆盖 Cover'], ['contain', '包含 Contain'], ['stretch', '拉伸 Stretch']]
+		// 1.3.0 的推荐观感：壁纸退成「底纹」，阅读面回到主题底色。
+		// 旧默认（mask 15 / brightness 75 / blur 0 / 无铺底）让壁纸占满整个内容面，
+		// 正文直接压在图片纹理上，浅色壁纸在黑主题下、深色壁纸在亮主题下都糊。
+		// overlay 是本次新增的「面板实底」：把主题底色铺在壁纸之上，
+		// 文字因此坐在真正的实底上，而壁纸仍以约三成的比例透出来。
 		const DEFAULT_STATE = {
 			version: 3,
 			enabled: false,
 			current: null,
 			images: [],
 			opacity: 100,
-			brightness: 75,
-			mask: 15,
-			blur: 0,
+			brightness: 100,
+			mask: 12,
+			blur: 6,
+			overlay: 70,
 			posX: 'center',
 			posY: 'center',
 			fit: 'cover',
+		}
+		// 「恢复推荐值」只重置观感参数，不动图库与选中项 —— 用户点它是想要
+		// 「好看的默认」，不是想把上传过的壁纸丢掉。
+		const RECOMMENDED = { opacity: 100, brightness: 100, mask: 12, blur: 6, overlay: 70 }
+		function baseRgb(scheme) {
+			return scheme === 'dark' ? '16,18,22' : '248,250,252'
 		}
 		/**
 		 * 把模糊后的图片包成 SVG 滤镜图层，返回一个 data URI。
@@ -49,19 +61,30 @@ window.__ModuleLoader__.load({
 				+ '<image href="' + href + '" xlink:href="' + href + '" x="0" y="0" width="' + width + '" height="' + height + '" preserveAspectRatio="xMidYMid slice" filter="url(#b)"/></svg>'
 			return svgDataUri(svg)
 		}
+		/**
+		 * 壁纸层叠式。CSS 里**先写的图层画在上面**，所以这里的顺序就是「从上到下」：
+		 * 面板实底 → 黑色遮罩 → 压暗 → 整体透明 → 壁纸。
+		 *
+		 * 面板实底（overlay）是本次观感修复的核心：它把主题底色盖在壁纸之上，
+		 * 于是内容面从「一张图」变成「实底 + 底纹」，正文对比度不再随壁纸明暗漂移。
+		 * 它必须排在最上面 —— 遮罩/压暗的语义是「把壁纸压下去」，只能作用于壁纸，
+		 * 若排在遮罩之下，遮罩会把铺好的底色一起压暗，亮主题下就拿不回亮度了。
+		 */
 		function composeBg(st, scheme, show) {
 			if (show === false) return scheme === 'dark' ? '#14161a' : '#f8fafc'
+			const base = baseRgb(scheme)
 			const mask = st.mask > 0 ? st.mask / 100 : 0
 			const dark = st.brightness < 100 ? 1 - st.brightness / 100 : 0
 			const fade = st.opacity < 100 ? 1 - st.opacity / 100 : 0
-			const base = scheme === 'dark' ? '16,18,22' : '248,250,252'
+			const plate = st.overlay > 0 ? Math.min(100, st.overlay) / 100 : 0
 			let layers = ''
+			if (plate > 0) layers += 'linear-gradient(rgba(' + base + ',' + plate + '), rgba(' + base + ',' + plate + ')), '
 			if (mask > 0) layers += 'linear-gradient(rgba(0,0,0,' + mask + '), rgba(0,0,0,' + mask + ')), '
 			if (dark > 0) layers += 'linear-gradient(rgba(0,0,0,' + dark + '), rgba(0,0,0,' + dark + ')), '
 			if (fade > 0) layers += 'linear-gradient(rgba(' + base + ',' + fade + '), rgba(' + base + ',' + fade + ')), '
 			const id = st.current
 			const item = id ? st.images.find((x) => x.id === id) : null
-			if (!item) return layers + '#14161a'
+			if (!item) return layers + 'rgb(' + base + ')'
 			const url = '/bg-file/' + item.id
 			let bg = url
 			if (st.blur > 0) {
@@ -69,6 +92,11 @@ window.__ModuleLoader__.load({
 			}
 			const size = st.fit === 'cover' ? 'cover' : st.fit === 'contain' ? 'contain' : '100% 100%'
 			return layers + "url('" + bg + "') " + st.posX + ' ' + st.posY + ' / ' + size + ' no-repeat fixed'
+		}
+		/** 面板底色：预览里替代真实内容面的那块实底，和 overlay 同源。 */
+		function panelColor(st, scheme) {
+			const plate = st.overlay > 0 ? Math.min(100, st.overlay) / 100 : 0
+			return 'rgba(' + baseRgb(scheme) + ',' + plate + ')'
 		}
 		const CSS = `
 			.dshbg-page { padding: 28px 32px; max-width: 800px; }
@@ -78,7 +106,10 @@ window.__ModuleLoader__.load({
 			.dshbg-preview { border: 1px solid var(--dsw-alias-border-l1); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; background-size: cover; transition: background .2s; min-height: 130px; }
 			.dshbg-preview-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
 			.dshbg-preview-tag { font-size: 11px; color: var(--dsw-alias-label-tertiary); }
-			.dshbg-msg { background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 6px; max-width: 72%; }
+			/* 预览里的「内容面」底色由行内样式给（跟随 overlay），这里不再写死不透明
+			   的 bg-layer-1 —— 旧版正因为预览用实底、真实对话区用被壁纸覆盖的
+			   bg-base，才出现「预览好看、进去一糊」。 */
+			.dshbg-msg { border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 6px; max-width: 72%; }
 			.dshbg-msg.other { align-self: flex-end; }
 			.dshbg-msg-line { height: 8px; border-radius: 4px; background: var(--dsw-alias-label-secondary); opacity: .45; }
 			.dshbg-msg-line.w70 { width: 70%; } .dshbg-msg-line.w90 { width: 90%; } .dshbg-msg-line.w40 { width: 40%; } .dshbg-msg-line.w60 { width: 60%; }
@@ -109,7 +140,8 @@ window.__ModuleLoader__.load({
 			.dshbg-del { appearance: none; font: inherit; font-size: 11px; color: var(--dsw-alias-state-error-primary); background: none; border: none; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
 			.dshbg-del:hover { background: var(--dsw-alias-interactive-bg-hover); }
 			.dshbg-slider-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
-			.dshbg-slider-row span { font-size: 13px; color: var(--dsw-alias-label-secondary); width: 56px; flex: none; }
+			.dshbg-slider-row span { font-size: 13px; color: var(--dsw-alias-label-secondary); width: 64px; flex: none; }
+			.dshbg-hint { font-size: 11.5px; line-height: 1.6; color: var(--dsw-alias-label-tertiary); margin: -2px 0 12px; max-width: 420px; }
 			.dshbg-slider-row input[type="range"] { flex: 1; max-width: 240px; accent-color: var(--dsw-alias-brand-primary); }
 			.dshbg-slider-row code { font-size: 12px; color: var(--dsw-alias-label-secondary); min-width: 40px; font-family: ui-monospace, monospace; }
 			.dshbg-posgrid { display: grid; grid-template-columns: repeat(3, 34px); gap: 4px; }
@@ -121,6 +153,7 @@ window.__ModuleLoader__.load({
 			.dshbg-seg button:last-child { border-right: none; }
 			.dshbg-seg button.active { background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font-weight: 500; }
 			.dshbg-actions { margin-top: 20px; display: flex; align-items: center; gap: 12px; }
+			.dshbg-actions-inline { margin-top: 6px; }
 			.dshbg-btn { appearance: none; font: inherit; font-size: 13px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px; padding: 7px 14px; cursor: pointer; }
 			.dshbg-btn:hover { border-color: var(--dsw-alias-border-l2); }
 			.dshbg-btn.primary { background: var(--dsw-alias-brand-primary); color: #fff; border-color: transparent; }
@@ -173,6 +206,7 @@ window.__ModuleLoader__.load({
 						brightness: typeof cfg.brightness === 'number' ? cfg.brightness : st.brightness,
 						mask: typeof cfg.mask === 'number' ? cfg.mask : st.mask,
 						blur: typeof cfg.blur === 'number' ? cfg.blur : st.blur,
+						overlay: typeof cfg.overlay === 'number' ? cfg.overlay : st.overlay,
 						posX: POS_X.indexOf(cfg.posX) !== -1 ? cfg.posX : st.posX,
 						posY: POS_Y.indexOf(cfg.posY) !== -1 ? cfg.posY : st.posY,
 						fit: cfg.fit === 'contain' || cfg.fit === 'stretch' ? cfg.fit : 'cover',
@@ -253,7 +287,7 @@ window.__ModuleLoader__.load({
 					},
 						React.createElement('span', { className: 'dshbg-switch-track' },
 							React.createElement('span', { className: 'dshbg-switch-knob' }))))),
-				React.createElement('div', { className: 'dshbg-msg' },
+				React.createElement('div', { className: 'dshbg-msg', style: { background: panelColor(st, scheme) } },
 					React.createElement('div', { className: 'dshbg-msg-line w70' }),
 					React.createElement('div', { className: 'dshbg-msg-line w90' }),
 					React.createElement('div', { className: 'dshbg-msg-line w40' })))
@@ -292,6 +326,13 @@ window.__ModuleLoader__.load({
 
 			nodes.push(React.createElement('div', { className: 'dshbg-group' + (st.enabled ? '' : ' dshbg-dim'), key: 'params' },
 				React.createElement('div', { className: 'dshbg-label' }, '参数'),
+				// 面板实底排第一：它是「看得清」这个诉求的旋钮。调到 0 就回到旧行为
+				// （壁纸直接铺满内容面），调到 100 则完全看不到壁纸。
+				React.createElement('div', { className: 'dshbg-slider-row' },
+					React.createElement('span', null, '面板实底'),
+					React.createElement('input', { type: 'range', min: 0, max: 100, step: 1, value: st.overlay, onChange: (e) => commit({ overlay: Number(e.target.value) }) }),
+					React.createElement('code', null, st.overlay + '%')),
+				React.createElement('p', { className: 'dshbg-hint' }, '面板实底 = 内容面铺多厚的主题底色。越高字越清楚、壁纸越淡；70% 是推荐值。'),
 				React.createElement('div', { className: 'dshbg-slider-row' },
 					React.createElement('span', null, '透明度'),
 					React.createElement('input', { type: 'range', min: 0, max: 100, step: 1, value: st.opacity, onChange: (e) => commit({ opacity: Number(e.target.value) }) }),
@@ -307,7 +348,14 @@ window.__ModuleLoader__.load({
 				React.createElement('div', { className: 'dshbg-slider-row' },
 					React.createElement('span', null, '模糊'),
 					React.createElement('input', { type: 'range', min: 0, max: 20, step: 1, value: st.blur, onChange: (e) => commit({ blur: Number(e.target.value) }) }),
-					React.createElement('code', null, st.blur + 'px'))))
+					React.createElement('code', null, st.blur + 'px')),
+				React.createElement('div', { className: 'dshbg-actions dshbg-actions-inline' },
+					React.createElement('button', {
+						type: 'button',
+						className: 'dshbg-btn',
+						onClick: () => commit({ ...RECOMMENDED }),
+					}, '恢复推荐观感'),
+					React.createElement('span', { className: 'dshbg-status' }, '只重置上面五个参数，不动图片'))))
 
 			nodes.push(React.createElement('div', { className: 'dshbg-group' + (st.enabled ? '' : ' dshbg-dim'), key: 'posgroup' },
 				React.createElement('div', { className: 'dshbg-label' }, '背景位置'),
@@ -489,6 +537,7 @@ window.__ModuleLoader__.load({
 				brightness: st.brightness,
 				mask: st.mask,
 				blur: st.blur,
+				overlay: st.overlay,
 				posX: st.posX,
 				posY: st.posY,
 				fit: st.fit,
@@ -530,6 +579,7 @@ window.__ModuleLoader__.load({
 					st.brightness = typeof cfg.brightness === 'number' ? cfg.brightness : st.brightness
 					st.mask = typeof cfg.mask === 'number' ? cfg.mask : st.mask
 					st.blur = typeof cfg.blur === 'number' ? cfg.blur : st.blur
+					st.overlay = typeof cfg.overlay === 'number' ? cfg.overlay : st.overlay
 					st.posX = POS_X.indexOf(cfg.posX) !== -1 ? cfg.posX : st.posX
 					st.posY = POS_Y.indexOf(cfg.posY) !== -1 ? cfg.posY : st.posY
 					st.fit = cfg.fit === 'contain' || cfg.fit === 'stretch' ? cfg.fit : 'cover'
