@@ -3,18 +3,39 @@
 本文件格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-本仓是**两个独立的包**：
+本仓是**一个包**，宿主半与客户端半分居两个目录：
 
-| 包名 | 目录 |
+| 目录 | 内容 |
 |---|---|
-| `@deepseek-ai/dsh-bg` | `bg/` |
-| `@deepseek-ai/dsh-client-bg` | `client-bg/` |
+| `lib/` | 宿主半（Node ESM）：存储与 `/bg-*` 路由 |
+| `client/` | 客户端半（浏览器 React）：设置面板与背景渲染 |
 
-两者版本号各自独立演进；下列条目按时间倒序，标注涉及的包。
+1.2.0 起合并为单包；此前是两个独立包，版本号各自演进，详见该版本条目。下列条目按时间倒序，标注涉及的目录。
 
 ## Unreleased
 
 （暂无）
+
+## 1.2.0
+
+**包结构变更（安装方式破坏性，配置与数据不受影响）**：两个包合并为一个，包名从
+`@deepseek-ai/dsh-bg` + `@deepseek-ai/dsh-client-bg` 改为 **`dsh-bg-plugin`**。
+
+- **为什么要合并**：`@deepseek-ai/` 是官方 scope，第三方包永远发不上 npm；去掉 scope
+  后的 `dsh-bg` 又已被第三方占用（0.1.2），`dsh-client-bg` 虽可用但拆着要装两次，且
+  容易出现「只装了宿主半、设置页里看不到背景设置」的半装状态。合并成一个包后，装一次
+  就完整，安装命令也只有一条。
+- **目录**：`bg/lib/` → `lib/`，`client-bg/lib/client.js` → `client/client.js`；
+  `client-bg/lib/index.js`（原本只是一段空 `apply`）删除。文件用 `git mv` 移动，历史可追。
+- **声明**：一份 `package.json` 同时给出 `main`（宿主半）、`exports["./client"]`
+  （客户端半）、`dsh.bundle.patch` 与 `dsh.client`；`cordis.patch.yml` 由两条 insert
+  并为一条（客户端侧改由 `dsh.client` 驱动加载，不再需要单独插入）。
+- **客户端 loader id** 同步改为包名。宿主按包名注册客户端模块，id 与包名不一致时不会
+  报错，只会静默不加载 —— 所以这条也进了自动校验。
+- **校验**：`check-manifests` 从「校验两个包」改写为单包，并新增三条防回归检查：包名不得
+  带 npm scope、`__ModuleLoader__.load` 的 id 必须等于包名、patch 必须恰好插入一条。
+- **不变**：配置格式仍是 `version: 3`，存储仍是 `$DSH_HOME/background` 下的原图 +
+  `.dsh-bg-config.json`。升级不丢图、不丢设置，无需迁移。
 
 ## 1.1.0
 

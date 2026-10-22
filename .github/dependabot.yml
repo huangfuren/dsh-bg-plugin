@@ -1,12 +1,9 @@
-# 依赖更新：本仓库是两个包、没有根 package.json，因此每个包各挂一条。
+# 依赖更新：本仓库是单个包（根 package.json），只挂一条。
+# 运行期零依赖，实际会被检查的是 peerDependencies（react）与根上的脚本工具。
 # 每周检查一次，有更新就开 PR。
 version: 2
 updates:
   - package-ecosystem: npm
-    directory: /bg
-    schedule:
-      interval: weekly
-  - package-ecosystem: npm
-    directory: /client-bg
+    directory: /
     schedule:
       interval: weekly

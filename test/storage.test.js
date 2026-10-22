@@ -12,7 +12,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { createStorage, sanitizeConfig, isValidImageId } from '../bg/lib/storage.js'
+import { createStorage, sanitizeConfig, isValidImageId } from '../lib/storage.js'
 import { makeTempDir, pngBytes } from './helpers.mjs'
 
 const silent = { info() {}, warn() {}, error() {} }

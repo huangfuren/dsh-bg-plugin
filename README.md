@@ -8,18 +8,20 @@ DeepSeek Harness (DSH) 自定义背景插件 —— 为 `dsh web` 界面提供�
 
 | 目录 | 说明 |
 |---|---|
-| `bg/` | 宿主端（Node half）：图片存储、`/bg-upload` `/bg-file` `/bg-rpc` 路由、配置持久化 |
-| `client-bg/` | 客户端（Web half）：设置面板 UI、主题 Token 渲染、fetch 上传 |
+| `lib/` | 宿主端（Node half）：图片存储、`/bg-upload` `/bg-file` `/bg-rpc` 路由、配置持久化 |
+| `client/` | 客户端（Web half）：设置面板 UI、主题 Token 渲染、fetch 上传 |
 | `test/` | 宿主侧的回归测试（`node --test`，零依赖） |
 
-宿主端内部按职责拆成四个模块，`bg/lib/index.js` 只做装配：
+两半在同一个包里：宿主侧由 `main` 指向 `lib/index.js`，客户端侧由 `exports["./client"]` 指向 `client/client.js`，`package.json` 里同时声明 `dsh.bundle.patch` 与 `dsh.client`。
+
+宿主端内部按职责拆成四个模块，`lib/index.js` 只做装配：
 
 | 文件 | 职责 |
 |---|---|
-| `bg/lib/image-format.js` | 按字节签名识别 PNG / JPEG / GIF / WebP，并嗅探像素宽高 |
-| `bg/lib/multipart.js` | `multipart/form-data` 解析 |
-| `bg/lib/storage.js` | 配置与图片落盘、旧格式懒迁移、孤儿回收 |
-| `bg/lib/routes.js` | 三个 HTTP 路由，含流式限额与缓存头 |
+| `lib/image-format.js` | 按字节签名识别 PNG / JPEG / GIF / WebP，并嗅探像素宽高 |
+| `lib/multipart.js` | `multipart/form-data` 解析 |
+| `lib/storage.js` | 配置与图片落盘、旧格式懒迁移、孤儿回收 |
+| `lib/routes.js` | 三个 HTTP 路由，含流式限额与缓存头 |
 
 ## 功能
 
@@ -39,33 +41,28 @@ DeepSeek Harness (DSH) 自定义背景插件 —— 为 `dsh web` 界面提供�
 
 ## 安装
 
-本插件是**两个独立的包**，各自都声明了 `dsh.bundle.patch`（组合包），因此都能被 DSH 的插件安装器单独安装：
-
-| 包名 | 目录 | 作用 |
-|---|---|---|
-| `@deepseek-ai/dsh-bg` | `bg/` | 宿主端：图片存储与 `/bg-*` 路由 |
-| `@deepseek-ai/dsh-client-bg` | `client-bg/` | 客户端：设置面板与背景渲染 |
-
-桌面版「添加插件」或 CLI 逐个添加本地目录 / Git 仓库即可（**两个都要装**）：
+**一个包**，同时含宿主半与客户端半 —— `dsh.bundle.patch` 让插件安装器接受它，`dsh.client` 让宿主在网页端加载 `exports["./client"]`。装一次就齐，不存在「只装了宿主半、设置页看不见」的状态。
 
 ```bash
 # 网页版 CLI（profile 换成 desktop 即为桌面版）
-dsh plugin --profile desktop add link:/absolute/path/to/dsh-bg-plugin/bg
-dsh plugin --profile desktop add link:/absolute/path/to/dsh-bg-plugin/client-bg
+dsh plugin --profile desktop add link:/absolute/path/to/dsh-bg-plugin
+
+# 或直接从 GitHub
+dsh plugin --profile desktop add github:huangfuren/dsh-bg-plugin
+
+# 本地开发时记得加 --ignore-scripts（沙箱会拦原生依赖的构建脚本）
 ```
 
-手工安装时的等价写法：把两个目录链接进 profile 的 `node_modules`，并登记两条加载项。
+不用安装器时的手工等价写法：把仓库目录链接进 profile 的 `node_modules`，并登记一条加载项。
 
 ```yaml
-# cordis.patch.yml（仅在不用安装器时需要）
+# cordis.patch.yml
 - insert:
     - id: bg
-      name: '@deepseek-ai/dsh-bg'
-    - id: client-bg
-      name: '@deepseek-ai/dsh-client-bg'
+      name: 'dsh-bg-plugin'
 ```
 
-> v1.0.1 起 client 半改为自插（自带 `cordis.patch.yml`），不再由 `bg` 的 patch 顺带插入 —— 早先那样做会让人以为装完 bg 就齐了，实际 `client-bg` 不在 `bg` 的 dependencies 里，pnpm 不会替它安装。
+> **1.2.0 起合并为单包**。此前是 `@deepseek-ai/dsh-bg` + `@deepseek-ai/dsh-client-bg` 两个包，要装两次，还容易漏装客户端半。已装旧版的话，把两个旧包移除后按上面装一次即可；配置与图片都在 `$DSH_HOME/background`，不受影响。
 
 设置入口：**设置 → 通用设置 → 外观**（背景相关调节块）。
 
@@ -75,8 +72,8 @@ dsh plugin --profile desktop add link:/absolute/path/to/dsh-bg-plugin/client-bg
 
 ## 开发
 
-- 宿主端：`bg/lib/`，纯 Node ESM，无构建步骤
-- 客户端：`client-bg/lib/client.js`，浏览器侧 React 代码
+- 宿主端：`lib/`，纯 Node ESM，无构建步骤
+- 客户端：`client/client.js`，浏览器侧 React 代码（`window.__ModuleLoader__.load` 的 `id` 必须等于包名）
 - 依赖：`react`（peerDependency），宿主服务 `webServer`、`sandboxPolicy`
 - 校验：`npm run verify`（语法 + 包声明 + 测试）；测试可单跑 `npm test`
 

@@ -16,7 +16,7 @@ import {
   mimeOfExt,
   isSupportedMime,
   IMAGE_EXTS,
-} from '../bg/lib/image-format.js'
+} from '../lib/image-format.js'
 import {
   pngBytes,
   gifBytes,

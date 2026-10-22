@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-	id: "@deepseek-ai/dsh-client-bg",
+	id: "dsh-bg-plugin",
 	factory: (require) => {
 		var module = { exports: {} };
 		var exports = module.exports;
@@ -406,7 +406,7 @@ window.__ModuleLoader__.load({
 			activated = true
 			// 0.1.5 打包产物缺失该声明，补上（原先直接引用未定义的 styleEl 导致 styleEl is not defined）。
 			const styleEl = document.createElement('style')
-			styleEl.dataset.plugin = '@deepseek-ai/dsh-client-bg'
+			styleEl.dataset.plugin = 'dsh-bg-plugin'
 			styleEl.textContent = CSS
 			document.head.appendChild(styleEl)
 			ctx.effect(() => () => { if (styleEl.parentNode) styleEl.parentNode.removeChild(styleEl) })
@@ -417,7 +417,7 @@ window.__ModuleLoader__.load({
 			// 因此开关是否可见取决于谁的层后注册 —— 这就是「点了开关背景不出现」的原因。
 			// important 的 author 声明在层叠中压过所有非 important 声明，背景从此说了算。
 			const liveEl = document.createElement('style')
-			liveEl.dataset.plugin = '@deepseek-ai/dsh-client-bg/live'
+			liveEl.dataset.plugin = 'dsh-bg-plugin/live'
 			document.head.appendChild(liveEl)
 			ctx.effect(() => () => { if (liveEl.parentNode) liveEl.parentNode.removeChild(liveEl) })
 

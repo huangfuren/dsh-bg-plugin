@@ -1,0 +1,7 @@
+# 背景插件：宿主半与客户端半在同一个包里（lib/ 与 client/），
+# 所以这里只插入一条。客户端侧由 package.json 的 dsh.client 声明驱动，
+# 自动加载 exports["./client"]，不需要再插第二条 —— 这也是单包相对旧的两包
+# 结构最直接的好处：不存在「只装了一半」的状态。
+- insert:
+    - id: bg
+      name: 'dsh-bg-plugin'

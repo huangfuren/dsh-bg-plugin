@@ -11,9 +11,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { createStorage } from '../bg/lib/storage.js'
-import { createRouteHandlers, readBodyLimited } from '../bg/lib/routes.js'
-import { buildMultipartBody } from '../bg/lib/multipart.js'
+import { createStorage } from '../lib/storage.js'
+import { createRouteHandlers, readBodyLimited } from '../lib/routes.js'
+import { buildMultipartBody } from '../lib/multipart.js'
 import { makeTempDir, makeReq, makeRes, pngBytes } from './helpers.mjs'
 
 const silent = { info() {}, warn() {}, error() {} }

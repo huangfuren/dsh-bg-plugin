@@ -7,7 +7,7 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseMultipart, boundaryOf, buildMultipartBody } from '../bg/lib/multipart.js'
+import { parseMultipart, boundaryOf, buildMultipartBody } from '../lib/multipart.js'
 import { pngBytes } from './helpers.mjs'
 
 const BOUNDARY = '----dshbgBoundary1234'

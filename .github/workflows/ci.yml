@@ -1,5 +1,5 @@
 # CI 工作流：每次向 main 分支推送或发起针对 main 的 PR 时，
-# 在多个 Node.js 版本 × 操作系统上校验两个包的产物、加载声明与行为测试。
+# 在多个 Node.js 版本 × 操作系统上校验包产物、加载声明与行为测试。
 name: CI
 
 # 触发条件：
@@ -16,9 +16,8 @@ permissions:
   contents: read
 
 jobs:
-  # 校验任务：本仓库是两个包（bg 宿主半 + client-bg 客户端半）+ 一个仅用于脚本的
-  # 私有根工作区。三个包都没有任何运行时依赖，因此不需要 install 步骤，直接跑
-  # `npm run verify`（= 语法/清单检查 + node --test）。
+  # 校验任务：本仓库是一个包（lib 宿主半 + client 客户端半），没有任何运行时依赖，
+  # 因此不需要 install 步骤，直接跑 `npm run verify`（= 语法/清单检查 + node --test）。
   verify:
     name: ${{ matrix.os }} / Node ${{ matrix.node }}
     runs-on: ${{ matrix.os }}

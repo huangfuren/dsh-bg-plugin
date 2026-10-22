@@ -1,13 +1,68 @@
 {
-  "name": "dsh-bg-plugin-repo",
-  "private": true,
-  "version": "0.0.0",
-  "description": "仓库工作区（不发布）：包含 bg 宿主半与 client-bg 客户端半两个独立包，以及校验脚本与测试。",
+  "name": "dsh-bg-plugin",
+  "version": "1.2.0",
+  "description": "Persistent full-window background for DeepSeek Harness: upload images and tune opacity, brightness, mask, blur, position and fit. Images live on the host filesystem, so they survive browser data clearing and reinstalls.",
   "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./client/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "client",
+    "cordis.patch.yml",
+    "README.md",
+    "README.en.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-theme",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ],
+      "platform": "web"
+    }
+  },
+  "peerDependencies": {
+    "react": "^18.2.0"
+  },
+  "engines": {
+    "node": ">=22.19",
+    "dsh": ">=0.1.5-rc.2 <1.0.0 || >=0.2.0-rc.1 <1.0.0"
+  },
+  "keywords": [
+    "deepseek",
+    "harness",
+    "dsh",
+    "dsh-plugin",
+    "background",
+    "wallpaper"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/huangfuren/dsh-bg-plugin.git"
+  },
+  "homepage": "https://github.com/huangfuren/dsh-bg-plugin#readme",
+  "bugs": {
+    "url": "https://github.com/huangfuren/dsh-bg-plugin/issues"
+  },
+  "author": "huangfuren",
+  "publishConfig": {
+    "access": "public"
+  },
   "license": "MIT",
   "scripts": {
-    "check": "node --check bg/lib/index.js && node --check bg/lib/storage.js && node --check bg/lib/routes.js && node --check bg/lib/multipart.js && node --check bg/lib/image-format.js && node --check client-bg/lib/index.js && node --check client-bg/lib/client.js && node scripts/check-manifests.mjs",
+    "check": "node --check lib/index.js && node --check lib/storage.js && node --check lib/routes.js && node --check lib/multipart.js && node --check lib/image-format.js && node --check client/client.js && node scripts/check-manifests.mjs",
     "test": "node --test test/image-format.test.js test/multipart.test.js test/storage.test.js test/routes.test.js test/plugin-apply.test.js",
-    "verify": "npm run check && npm test"
+    "verify": "npm run check && npm test",
+    "prepack": "npm run verify"
   }
 }

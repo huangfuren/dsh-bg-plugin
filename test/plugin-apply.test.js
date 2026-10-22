@@ -9,9 +9,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import plugin from '../bg/lib/index.js'
+import plugin from '../lib/index.js'
 import { makeTempDir, makeReq, makeRes, pngBytes } from './helpers.mjs'
-import { buildMultipartBody } from '../bg/lib/multipart.js'
+import { buildMultipartBody } from '../lib/multipart.js'
 
 const BOUNDARY = '----dshbgApplyTest'
 
