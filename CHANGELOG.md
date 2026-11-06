@@ -12,9 +12,13 @@
 
 1.2.0 起合并为单包；此前是两个独立包，版本号各自演进，详见该版本条目。下列条目按时间倒序，标注涉及的目录。
 
-## Unreleased
+## 1.3.1
 
-（暂无）
+- **补 `dsh.compatibility.dshReleases` 声明**：`0.1.7-rc.2` / `0.2.0-rc.2` / `0.2.1-rc.5` /
+  `0.2.2-rc.1`。依据：0.1.7-rc.2 上七插件实测加载；0.2.2-rc.1 的三条客户端断代 API
+  （`EntryTree.write()`→`commit(change)`、`MenuTarget`→`ContextMenuTarget`、
+  `useAnchoredPosition` / `Menu.getAnchorRect` 移除）本仓引用数为 0。该字段供插件市场与
+  兼容性阅读器查看，不参与宿主加载判定 —— 宿主强校验的仍是 `peerDependencies`。
 
 ## 1.3.0
 
